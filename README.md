@@ -1,13 +1,18 @@
 # Proxmotion app recipes
 
 The App Marketplace recipes of [Proxmotion](https://github.com/proxmotion-devs/proxmotion):
-OpenVPN, WireGuard, Docker, WordPress and the other apps a panel can install on
-a VPS. The panel downloads them from this repository in its **App Store**
-(administrators only); nothing here runs until an administrator downloads an app.
+OpenVPN, WireGuard, Docker, WordPress and the other apps a panel can install on a VPS.
+Each app also comes as a ready **`.proxapp` package** in [`packages/`](packages).
+
+## Installing an app in a panel
+
+1. Download `packages/<slug>.proxapp` of the app.
+2. In the panel, open **Apps → Install package** and choose the file.
+3. The panel shows what the package changes (for an update, against the version installed), then installs it.
+
+A newer package of an installed app updates it; servers keep the version they were installed with.
 
 ## Layout
-
-Each directory is one app:
 
 ```
 <slug>/
@@ -15,6 +20,8 @@ Each directory is one app:
   install.sh       # or .ps1 for Windows recipes
   uninstall.sh, upgrade.sh, actions/*.sh   # as the recipe declares them
   README.md        # for administrators and providers
+packages/
+  <slug>.proxapp   # a zip of <slug>/, built with php artisan apps:pack
 ```
 
 The shared helper and runner scripts (`_lib`) and the JSON Schemas (`_schema`)
@@ -29,10 +36,10 @@ itself.
 - A change to a recipe's `recipe.yaml` or any script it uses needs a **higher
   `version`**. Installed versions never change, so a changed version with the
   same number is refused.
-- Lint before you open a pull request: `shellcheck` on the shell scripts and
-  the panel's validation (below).
+- After changing a recipe, rebuild its package and commit both. CI fails when a
+  package does not match its recipe.
 
-## Checking a recipe locally
+## Working on a recipe
 
 With a Proxmotion checkout next to this one:
 
@@ -40,7 +47,8 @@ With a Proxmotion checkout next to this one:
 cd proxmotion/panel
 composer install
 php artisan apps:validate --path=../../proxmotion-recipes
-php artisan apps:check-versions --base-path=../../recipes-base --path=../../proxmotion-recipes
+php artisan apps:pack --path=../../proxmotion-recipes
+php artisan apps:pack --path=../../proxmotion-recipes --check
 ```
 
 `apps:make --path=<this repository> <slug>` creates a skeleton for a new app.
