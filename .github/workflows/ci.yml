@@ -1,0 +1,71 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  recipes:
+    name: Validate recipes
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: recipes
+          persist-credentials: false
+
+      # The panel provides the JSON Schemas and the shared scripts the recipes use.
+      - uses: actions/checkout@v4
+        with:
+          repository: proxmotion-devs/proxmotion
+          ref: main
+          path: proxmotion
+          persist-credentials: false
+
+      - name: Base revision of the recipes
+        if: github.event_name == 'pull_request'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: recipes-base
+          persist-credentials: false
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          tools: composer
+
+      - name: Install panel dependencies
+        working-directory: proxmotion/panel
+        run: composer install --no-interaction --prefer-dist --no-scripts
+
+      - name: Validate against the recipe schema
+        working-directory: proxmotion/panel
+        run: php artisan apps:validate --path="$GITHUB_WORKSPACE/recipes"
+
+      - name: Changed recipes have a new version
+        if: github.event_name == 'pull_request'
+        working-directory: proxmotion/panel
+        run: php artisan apps:check-versions --base-path="$GITHUB_WORKSPACE/recipes-base" --path="$GITHUB_WORKSPACE/recipes"
+
+      - name: shellcheck
+        working-directory: recipes
+        run: |
+          files=$(git ls-files '*.sh')
+          if [ -n "$files" ]; then shellcheck $files; else echo "No shell scripts"; fi
+
+      - name: PowerShell scripts parse
+        shell: pwsh
+        run: |
+          $failed = $false
+          $files = Get-ChildItem -Recurse -Filter *.ps1 -Path "$env:GITHUB_WORKSPACE/recipes", "$env:GITHUB_WORKSPACE/proxmotion/panel/recipes/_lib"
+          foreach ($file in $files) {
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile($file.FullName, [ref]$null, [ref]$errors) | Out-Null
+            if ($errors.Count -gt 0) { $failed = $true; Write-Error "$($file.FullName): $($errors[0].Message)" }
+          }
+          if ($failed) { exit 1 }
