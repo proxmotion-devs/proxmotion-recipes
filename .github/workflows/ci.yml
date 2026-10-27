@@ -9,8 +9,8 @@ permissions:
   contents: read
 
 jobs:
-  recipes:
-    name: Validate recipes
+  packages:
+    name: Validate packages
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -18,7 +18,7 @@ jobs:
           path: recipes
           persist-credentials: false
 
-      # The panel provides the JSON Schemas and the shared scripts the recipes use.
+      # The panel provides the JSON Schemas, the shared scripts and the package commands.
       - uses: actions/checkout@v4
         with:
           repository: proxmotion-devs/proxmotion
@@ -26,7 +26,7 @@ jobs:
           path: proxmotion
           persist-credentials: false
 
-      - name: Base revision of the recipes
+      - name: Base revision of the packages
         if: github.event_name == 'pull_request'
         uses: actions/checkout@v4
         with:
@@ -43,30 +43,33 @@ jobs:
         working-directory: proxmotion/panel
         run: composer install --no-interaction --prefer-dist --no-scripts
 
-      - name: Validate against the recipe schema
+      - name: Validate the packages
         working-directory: proxmotion/panel
         run: php artisan apps:validate --path="$GITHUB_WORKSPACE/recipes"
 
-      - name: Packages match their recipes
-        working-directory: proxmotion/panel
-        run: php artisan apps:pack --path="$GITHUB_WORKSPACE/recipes" --check
-
-      - name: Changed recipes have a new version
+      - name: Changed packages have a new version
         if: github.event_name == 'pull_request'
         working-directory: proxmotion/panel
         run: php artisan apps:check-versions --base-path="$GITHUB_WORKSPACE/recipes-base" --path="$GITHUB_WORKSPACE/recipes"
 
+      # Inside the checkout, so shellcheck finds .shellcheckrc.
+      - name: Unpack the packages
+        working-directory: recipes
+        run: |
+          mkdir -p .unpacked
+          for package in */*.proxapp; do unzip -q -o "$package" -d .unpacked; done
+
       - name: shellcheck
         working-directory: recipes
         run: |
-          files=$(git ls-files '*.sh')
+          files=$(find .unpacked -name '*.sh' | sort)
           if [ -n "$files" ]; then shellcheck $files; else echo "No shell scripts"; fi
 
       - name: PowerShell scripts parse
         shell: pwsh
         run: |
           $failed = $false
-          $files = Get-ChildItem -Recurse -Filter *.ps1 -Path "$env:GITHUB_WORKSPACE/recipes", "$env:GITHUB_WORKSPACE/proxmotion/panel/recipes/_lib"
+          $files = Get-ChildItem -Recurse -Filter *.ps1 -Path "$env:GITHUB_WORKSPACE/recipes/.unpacked", "$env:GITHUB_WORKSPACE/proxmotion/panel/recipes/_lib"
           foreach ($file in $files) {
             $errors = $null
             [System.Management.Automation.Language.Parser]::ParseFile($file.FullName, [ref]$null, [ref]$errors) | Out-Null
